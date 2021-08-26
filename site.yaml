@@ -4,12 +4,54 @@
   become: true
   pre_tasks:
 
-  - name: install updates
+  - name: update cache
     tags: always
     apt:
-      upgrade: dist
       update_cache: yes
+    changed_when: false
     when: ansible_distribution == "Ubuntu"
+
+- hosts: all
+  become: true
+  tasks:
+
+  - name: create simone user
+    tags: always
+    user:
+      name: simone
+      groups: root
+
+  - name: add ssh key for simone
+    tags: always
+    authorized_key:
+      user: simone
+      key: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7udo5ncVAnxeSgdX4pyMHt9oY8YwjZi9vwz9YN8muG Ansible"
+
+  - name: add sudoers file for simone
+    tags: always
+    copy:
+      src: sudoer_simone
+      dest: /etc/sudoers.d/simone
+      owner: root
+      group: root
+      mode: 0440
+
+- hosts: workstations
+  become: true
+  tasks:
+
+  - name: install unzip
+    package:
+      name: unzip
+
+  - name: install terraform
+    unarchive:
+      src: http://releases.hashicorp.com/terraform/0.12.28/terraform_0.12.28_linux_amd64.zip
+      dest: /usr/local/bin
+      remote_src: yes
+      mode: 0755
+      owner: root
+      group: root
 
 - hosts: web_servers
   become: true
@@ -22,6 +64,30 @@
         - "{{ apache_package }}"
         - "{{ php_package }}"
       state: latest
+
+  - name: start apache2
+    tags: http, web, apache2
+    service:
+      name: apache2
+      state: started
+      enabled: yes
+    when: ansible_distribution == "Ubuntu"
+
+  - name: change email address for admin
+    tags: email, apache, http
+    lineinfile:
+      path: /etc/apache2/apache2.conf
+      regexp: '^ServerAdmin'
+      line: ServerAdmin somebody@somewhere.net
+    when: ansible_distribution == "Ubuntu"
+    register: apache2
+
+  - name: restart apache2
+    tags: apache2, ubuntu, http
+    service:
+      name: apache2
+      state: restarted
+    when: apache2.changed
 
   - name: copy default file for site
     tags: apache, ubuntu, web, html
